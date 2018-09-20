@@ -268,8 +268,9 @@ const functionNames = "${functionNames.join()}".split(",");
 module.exports.warmUp = (event, context, callback) => {
   let invokes = [];
   let errors = 0;
-  let invocationCount = "${this.warmup.count}";
+  let invocationCount = ${this.warmup.count};
   console.log("Warm Up Start");
+  console.log("Invoke " + invocationCount + " instances of " + functionNames);
   functionNames.forEach((functionName) => {
     const params = {
       FunctionName: functionName,
@@ -347,12 +348,7 @@ module.exports.warmUp = (event, context, callback) => {
       Qualifier: process.env.SERVERLESS_ALIAS || '$LATEST',
       Payload: JSON.stringify({ source: 'serverless-plugin-warmup' })
     }
-    let p = []
-    for (let i = 1; i <= this.warmup.count; i++) {
-      this.serverless.cli.log('WarmUP: Pre-warming up your functions')
-      p.push(this.provider.request('Lambda', 'invoke', params))
-    }
-    return Promise.all(p)
+    return this.provider.request('Lambda', 'invoke', params)
       .then(data => this.serverless.cli.log(`WarmUp: Functions sucessfuly pre-warmed for ${this.warmup.count} instances`))
       .catch(error => this.serverless.cli.log(`WarmUp: Error while pre-warming functions for ${this.warmup.count} instances`, error))
   }
