@@ -49,16 +49,16 @@ class WarmUP {
    * */
   afterPackageInitialize () {
     // See https://github.com/serverless/serverless/issues/2631
-    this.options.stage  = this.options.stage
-      || this.serverless.service.provider.stage
-      || (this.serverless.service.defaults && this.serverless.service.defaults.stage)
-      || 'dev'
-    this.options.region = this.options.region
-      || this.serverless.service.provider.region
-      || (this.serverless.service.defaults && this.serverless.service.defaults.region)
-      || 'us-east-1'
+    this.options.stage = this.options.stage ||
+      this.serverless.service.provider.stage ||
+      (this.serverless.service.defaults && this.serverless.service.defaults.stage) ||
+      'dev'
+    this.options.region = this.options.region ||
+      this.serverless.service.provider.region ||
+      (this.serverless.service.defaults && this.serverless.service.defaults.region) ||
+      'us-east-1'
     this.custom = this.serverless.service.custom
-    
+
     this.configPlugin()
     return this.createWarmer()
   }
@@ -112,7 +112,8 @@ class WarmUP {
       name: this.serverless.service.service + '-' + this.options.stage + '-warmup-plugin',
       schedule: ['rate(5 minutes)'],
       timeout: 10,
-      prewarm: false
+      prewarm: false,
+      count: 1
     }
 
     /** Set global custom options */
@@ -160,6 +161,11 @@ class WarmUP {
     /** Pre-warm */
     if (typeof this.custom.warmup.prewarm === 'boolean') {
       this.warmup.prewarm = this.custom.warmup.prewarm
+    }
+
+    /** count */
+    if (typeof this.custom.warmup.count === 'number') {
+      this.warmup.number = this.custom.warmup.number
     }
   }
 
@@ -262,6 +268,7 @@ const functionNames = "${functionNames.join()}".split(",");
 module.exports.warmUp = (event, context, callback) => {
   let invokes = [];
   let errors = 0;
+  let invocationCount = "${this.warmup.count}";
   console.log("Warm Up Start");
   functionNames.forEach((functionName) => {
     const params = {
@@ -271,12 +278,14 @@ module.exports.warmUp = (event, context, callback) => {
       Qualifier: process.env.SERVERLESS_ALIAS || "$LATEST",
       Payload: JSON.stringify({ source: "serverless-plugin-warmup" })
     };
-    invokes.push(lambda.invoke(params).promise().then((data) => {
-      console.log("Warm Up Invoke Success: " + functionName, data);
-    }, (error) => {
-      errors++;
-      console.log("Warm Up Invoke Error: " + functionName, error);
-    }));
+    for (let i = 1; i <= invocationCount; i++) {
+      invokes.push(lambda.invoke(params).promise().then((data) => {
+        console.log("Warm Up Invoke Success: " + functionName, data);
+      }, (error) => {
+        errors++;
+        console.log("Warm Up Invoke Error: " + functionName, error);
+      }));
+    }
   });
   Promise.all(invokes).then(() => {
     console.log("Warm Up Finished with " + errors + " invoke errors");
@@ -331,8 +340,6 @@ module.exports.warmUp = (event, context, callback) => {
    * @return {Promise}
    * */
   warmUpFunctions () {
-    this.serverless.cli.log('WarmUP: Pre-warming up your functions')
-
     const params = {
       FunctionName: this.warmup.name,
       InvocationType: 'RequestResponse',
@@ -340,10 +347,14 @@ module.exports.warmUp = (event, context, callback) => {
       Qualifier: process.env.SERVERLESS_ALIAS || '$LATEST',
       Payload: JSON.stringify({ source: 'serverless-plugin-warmup' })
     }
-
-    return this.provider.request('Lambda', 'invoke', params)
-      .then(data => this.serverless.cli.log('WarmUp: Functions sucessfuly pre-warmed'))
-      .catch(error => this.serverless.cli.log('WarmUp: Error while pre-warming functions', error))
+    let p = []
+    for (let i = 1; i <= this.warmup.count; i++) {
+      this.serverless.cli.log('WarmUP: Pre-warming up your functions')
+      p.push(this.provider.request('Lambda', 'invoke', params))
+    }
+    return Promise.all(p)
+      .then(data => this.serverless.cli.log(`WarmUp: Functions sucessfuly pre-warmed for ${this.warmup.count} instances`))
+      .catch(error => this.serverless.cli.log(`WarmUp: Error while pre-warming functions for ${this.warmup.count} instances`, error))
   }
 }
 
