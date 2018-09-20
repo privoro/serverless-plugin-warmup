@@ -165,7 +165,7 @@ class WarmUP {
 
     /** count */
     if (typeof this.custom.warmup.count === 'number') {
-      this.warmup.number = this.custom.warmup.number
+      this.warmup.count = this.custom.warmup.count
     }
   }
 
